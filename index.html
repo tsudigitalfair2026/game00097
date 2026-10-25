@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>ペンギンひらり！DX</title>
+<style>
+*{
+box-sizing:border-box;
+-webkit-tap-highlight-color:transparent;
+}
+html,body{
+margin:0;
+padding:0;
+width:100%;
+height:100%;
+overflow:hidden;
+font-family:sans-serif;
+background:#bfe9ff;
+touch-action:none;
+}
+.screen{
+width:100%;
+height:100%;
+display:none;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+text-align:center;
+padding:20px;
+}
+.active{
+display:flex;
+}
+button{
+font-size:20px;
+padding:16px 28px;
+border:none;
+border-radius:14px;
+background:#1976d2;
+color:white;
+min-width:180px;
+}
+#gameScreen{
+padding:0;
+justify-content:flex-start;
+background:linear-gradient(#9fe7ff,#e8f8ff);
+}
+#hud{
+width:100%;
+display:flex;
+justify-content:space-between;
+padding:12px;
+font-size:18px;
+font-weight:bold;
+background:#ffffffcc;
+z-index:10;
+}
+#gameArea{
+position:relative;
+width:100%;
+flex:1;
+overflow:hidden;
+touch-action:none;
+}
+#penguin{
+position:absolute;
+font-size:48px;
+bottom:20px;
+left:50%;
+transform:translateX(-50%);
+z-index:5;
+}
+.invincible{
+filter:drop-shadow(0 0 12px gold);
+}
+.secretMode{
+background:
+linear-gradient(#240046,#5a189a,#9d4edd);
+}
+.obstacle{
+position:absolute;
+font-size:42px;
+}
+.star{
+position:absolute;
+font-size:40px;
+}
+.gem{
+position:absolute;
+font-size:38px;
+}
+.banner{
+position:absolute;
+left:50%;
+top:40%;
+transform:translate(-50%,-50%);
+font-size:34px;
+font-weight:bold;
+color:#fff;
+text-shadow:0 0 10px #000;
+pointer-events:none;
+z-index:20;
+animation:pop 2s forwards;
+}
+@keyframes pop{
+0%{opacity:0;transform:translate(-50%,-50%) scale(.5);}
+20%{opacity:1;}
+80%{opacity:1;}
+100%{opacity:0;transform:translate(-50%,-50%) scale(1.4);}
+}
+.rank{
+font-size:40px;
+font-weight:bold;
+color:#ff9800;
+}
+</style>
+</head>
+<body>
+
+<div id="startScreen" class="screen active">
+<h1>🐧 ペンギンひらり！DX</h1>
+<p>
+左右に動いて氷をよけよう！<br>
+⭐を取ると5秒間無敵！<br>
+💎ひみつステージが突然出現！<br>
+30秒間生き残ればクリア！
+</p>
+<button id="startBtn">スタート</button>
+</div>
+
+<div id="gameScreen" class="screen">
+<div id="hud">
+<div>スコア: <span id="score">0</span></div>
+<div>残り: <span id="time">30</span>秒</div>
+</div>
+<div id="gameArea">
+<div id="penguin">🐧</div>
+</div>
+</div>
+
+<div id="resultScreen" class="screen">
+<h1>結果発表</h1>
+<p>最終スコア</p>
+<h2 id="finalScore">0</h2>
+<div id="rank" class="rank">C</div>
+<br>
+<button id="restartBtn">もう一度遊ぶ</button>
+</div>
+
+<script>
+const startScreen=document.getElementById("startScreen");
+const gameScreen=document.getElementById("gameScreen");
+const resultScreen=document.getElementById("resultScreen");
+const gameArea=document.getElementById("gameArea");
+const penguin=document.getElementById("penguin");
+
+const scoreEl=document.getElementById("score");
+const timeEl=document.getElementById("time");
+const finalScore=document.getElementById("finalScore");
+const rankEl=document.getElementById("rank");
+
+let score=0;
+let timeLeft=30;
+let gameRunning=false;
+
+let obstacles=[];
+let items=[];
+let gems=[];
+
+let spawnTimer;
+let starTimer;
+let countdown;
+let animation;
+
+let invincible=false;
+let invincibleTimeout;
+
+let secretStage=false;
+let secretTimeout;
+
+function startGame(){
+
+score=0;
+timeLeft=30;
+gameRunning=true;
+invincible=false;
+secretStage=false;
+
+scoreEl.textContent="0";
+timeEl.textContent="30";
+
+clearTimeout(invincibleTimeout);
+clearTimeout(secretTimeout);
+
+[...obstacles,...items,...gems].forEach(e=>e.remove());
+
+obstacles=[];
+items=[];
+gems=[];
+
+document.querySelectorAll(".banner").forEach(e=>e.remove());
+
+penguin.classList.remove("invincible");
+gameArea.classList.remove("secretMode");
+
+startScreen.classList.remove("active");
+resultScreen.classList.remove("active");
+gameScreen.classList.add("active");
+
+penguin.style.left=(gameArea.clientWidth/2-24)+"px";
+penguin.style.transform="none";
+
+spawnTimer=setInterval(spawnObstacle,700);
+starTimer=setInterval(spawnStar,5000);
+
+countdown=setInterval(()=>{
+timeLeft--;
+timeEl.textContent=timeLeft;
+
+if(timeLeft===18){
+startSecretStage();
+}
+
+if(timeLeft<=0){
+endGame(true);
+}
+},1000);
+
+loop();
+}
+
+function spawnObstacle(){
+if(!gameRunning) return;
+
+const o=document.createElement("div");
+o.className="obstacle";
+o.textContent=secretStage
+? (Math.random()<0.5 ? "☄️":"🔥")
+: (Math.random()<0.5 ? "🧊":"❄️");
+
+o.style.left=Math.random()*(gameArea.clientWidth-50)+"px";
+o.style.top="-60px";
+o.speed=secretStage ? 6.5+Math.random()*2 : 4+Math.random()*2.5;
+
+gameArea.appendChild(o);
+obstacles.push(o);
+}
+
+function spawnStar(){
+if(!gameRunning) return;
+
+const s=document.createElement("div");
+s.className="star";
+s.textContent="⭐";
+s.style.left=Math.random()*(gameArea.clientWidth-50)+"px";
+s.style.top="-60px";
+s.speed=4;
+
+gameArea.appendChild(s);
+items.push(s);
+}
+
+function startSecretStage(){
+
+if(secretStage || !gameRunning) return;
+
+secretStage=true;
+gameArea.classList.add("secretMode");
+
+showBanner("💎 ひみつステージ！ 💎");
+
+for(let i=0;i<8;i++){
+setTimeout(spawnGem,i*400);
+}
+
+secretTimeout=setTimeout(()=>{
+secretStage=false;
+gameArea.classList.remove("secretMode");
+showBanner("✨ 通常ステージへ ✨");
+},8000);
+}
+
+function spawnGem(){
+
+if(!gameRunning) return;
+
+const g=document.createElement("div");
+g.className="gem";
+g.textContent="💎";
+g.style.left=Math.random()*(gameArea.clientWidth-50)+"px";
+g.style.top="-60px";
+g.speed=5;
+
+gameArea.appendChild(g);
+gems.push(g);
+}
+
+function showBanner(text){
+const b=document.createElement("div");
+b.className="banner";
+b.textContent=text;
+gameArea.appendChild(b);
+
+setTimeout(()=>{
+if(b.parentNode) b.remove();
+},2000);
+}
+
+function activateInvincible(){
+
+invincible=true;
+penguin.classList.add("invincible");
+
+clearTimeout(invincibleTimeout);
+
+invincibleTimeout=setTimeout(()=>{
+invincible=false;
+penguin.classList.remove("invincible");
+},5000);
+}
+
+function loop(){
+
+if(!gameRunning) return;
+
+const p=penguin.getBoundingClientRect();
+
+for(let i=obstacles.length-1;i>=0;i--){
+
+const o=obstacles[i];
+
+let y=parseFloat(o.style.top);
+y+=o.speed;
+o.style.top=y+"px";
+
+const r=o.getBoundingClientRect();
+
+if(!(p.right<r.left||p.left>r.right||p.bottom<r.top||p.top>r.bottom)){
+
+if(invincible){
+score+=2;
+scoreEl.textContent=score;
+o.remove();
+obstacles.splice(i,1);
+}else{
+endGame(false);
+return;
+}
+}
+
+if(y>gameArea.clientHeight){
+score++;
+scoreEl.textContent=score;
+o.remove();
+obstacles.splice(i,1);
+}
+}
+
+for(let i=items.length-1;i>=0;i--){
+
+const s=items[i];
+
+let y=parseFloat(s.style.top);
+y+=s.speed;
+s.style.top=y+"px";
+
+const r=s.getBoundingClientRect();
+
+if(!(p.right<r.left||p.left>r.right||p.bottom<r.top||p.top>r.bottom)){
+activateInvincible();
+s.remove();
+items.splice(i,1);
+continue;
+}
+
+if(y>gameArea.clientHeight){
+s.remove();
+items.splice(i,1);
+}
+}
+
+for(let i=gems.length-1;i>=0;i--){
+
+const g=gems[i];
+
+let y=parseFloat(g.style.top);
+y+=g.speed;
+g.style.top=y+"px";
+
+const r=g.getBoundingClientRect();
+
+if(!(p.right<r.left||p.left>r.right||p.bottom<r.top||p.top>r.bottom)){
+score+=5;
+scoreEl.textContent=score;
+g.remove();
+gems.splice(i,1);
+continue;
+}
+
+if(y>gameArea.clientHeight){
+g.remove();
+gems.splice(i,1);
+}
+}
+
+animation=requestAnimationFrame(loop);
+}
+
+function endGame(clear){
+
+gameRunning=false;
+
+clearInterval(spawnTimer);
+clearInterval(starTimer);
+clearInterval(countdown);
+
+cancelAnimationFrame(animation);
+
+finalScore.textContent=score;
+
+let rank="C";
+
+if(score>=20) rank="B";
+if(score>=35) rank="A";
+if(score>=50) rank="S";
+if(score>=70) rank="SS";
+
+rankEl.textContent=(clear?"クリア ":"ゲームオーバー ")+rank+"ランク";
+
+gameScreen.classList.remove("active");
+resultScreen.classList.add("active");
+}
+
+function movePenguin(clientX){
+
+if(!gameRunning) return;
+
+const rect=gameArea.getBoundingClientRect();
+
+let x=clientX-rect.left-24;
+
+x=Math.max(0,Math.min(rect.width-48,x));
+
+penguin.style.left=x+"px";
+}
+
+gameArea.addEventListener("pointerdown",e=>{
+movePenguin(e.clientX);
+});
+
+gameArea.addEventListener("pointermove",e=>{
+movePenguin(e.clientX);
+});
+
+document.getElementById("startBtn").addEventListener("click",startGame);
+document.getElementById("restartBtn").addEventListener("click",startGame);
+</script>
+
+</body>
+</html>
